@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Summit 2 - Final Fixed</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        :root { --bg-color: #f8f9fa; --ink-color: #212529; }
+        body { background-color: #202020; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: 'Press Start 2P', monospace; overflow: hidden; }
+        
+        /* GAMEBOY SCREEN */
+        .game-screen { background-color: var(--bg-color); width: 350px; height: 650px; border: 12px solid #555; border-radius: 10px 10px 40px 10px; padding: 20px; display: flex; flex-direction: column; position: relative; color: var(--ink-color); box-shadow: 0 0 50px rgba(0,0,0,0.8); }
+        
+        /* BATTLE ZONE */
+        .battle-area { flex: 1; position: relative; margin-bottom: 10px; }
+        .status-box { position: absolute; background: var(--bg-color); padding: 5px; z-index: 5; border-radius: 4px; }
+        .opponent-status { top: 0; left: 0; }
+        .player-status { bottom: 20px; right: 0; text-align: right; }
+        
+        /* HP BARS */
+        .hp-container { width: 100px; border: 2px solid var(--ink-color); padding: 2px; background: white; display: flex; }
+        .hp-bar-fill { height: 6px; background-color: #e74c3c; width: 100%; transition: width 0.3s; }
+        
+        /* SPRITES */
+        .sprite { position: absolute; z-index: 1; image-rendering: pixelated; }
+        .opponent-sprite { top: 40px; right: 15px; width: 120px; animation: float 3s infinite ease-in-out; }
+        .player-sprite { bottom: 40px; left: 10px; width: 90px; transform: scaleX(-1); }
+        
+        /* DIALOGUE BOX */
+        .dialogue-box { height: 260px; border: 4px double var(--ink-color); padding: 15px; background: white; display: flex; flex-direction: column; z-index: 10; }
+        
+        /* TIMER */
+        .timer-container { width: 100%; height: 4px; background: #ddd; margin-bottom: 8px; }
+        .timer-fill { height: 100%; background: var(--ink-color); width: 100%; }
+        
+        /* TEXT & BUTTONS */
+        .text-display { font-size: 9px; line-height: 1.6; margin-bottom: 10px; min-height: 40px; }
+        .options-grid { display: grid; grid-template-columns: 1fr; gap: 6px; overflow-y: auto; }
+        
+        button { background: white; border: 2px solid var(--ink-color); font-family: 'Press Start 2P'; font-size: 8px; padding: 10px; cursor: pointer; text-align: left; margin-bottom: 5px; }
+        button:hover { background: var(--ink-color); color: white; }
+        button:disabled { color: #ccc; border-color: #ccc; }
+        
+        input { border: 2px solid var(--ink-color); font-family: 'Press Start 2P'; padding: 10px; width: 90%; margin-bottom: 10px; font-size: 10px; text-transform: uppercase; }
+        
+        /* ANIMATIONS */
+        .hidden { display: none; }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+        .blink { animation: blink-anim 0.2s 4; } @keyframes blink-anim { 50% { opacity: 0; } }
+        .save-status { text-align: center; margin-top: 10px; font-size: 9px; color: #555; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+    </style>
+</head>
+<body>
+
+<div class="game-screen">
+    <div class="battle-area">
+        <div class="opponent-status status-box">
+            <div style="font-size: 10px; margin-bottom: 5px; color: var(--ink-color);">GROUDON Lv.99</div>
+            <div class="hp-container"><div id="boss-hp-bar" class="hp-bar-fill"></div></div>
+        </div>
+        
+        <img src="groudon.gif" class="sprite opponent-sprite" id="boss-sprite" alt="Groudon">
+        
+        <div class="player-status status-box">
+            <div style="font-size: 10px; margin-bottom: 5px; color: var(--ink-color);">ROWLET Lv.50</div>
+            <div class="hp-container"><div style="width: 100%; background: #2ecc71; height: 6px;"></div></div>
+            <div style="font-size: 8px; margin-top: 4px;">Q: <span id="q-tracker">1</span>/30</div>
+        </div>
+        
+        <img src="owl.gif" class="sprite player-sprite" alt="Owl">
+    </div>
+
+    <div class="dialogue-box">
+        <div class="timer-container"><div id="timer-bar" class="timer-fill"></div></div>
+        <div id="game-text" class="text-display">A wild GROUDON appeared!</div>
+        
+        <div id="action-area">
+            <div id="input-screen">
+                <input type="text" id="team-name-input" placeholder="TEAM NAME...">
+                <button id="start-btn" style="width: 100%; text-align: center;">FIGHT</button>
+            </div>
+            <div id="options-container" class="options-grid hidden"></div>
+            <button id="next-btn" class="hidden" style="width: 100%; text-align: center;">NEXT ▶</button>
+            <div id="save-msg" class="save-status hidden"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+
+    const FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSdlgDyOo7tdmyDhaNqS1H5Hws63Sxet4OQgDpwZ5wSyAixqAw/formResponse";
+    
+    const ENTRY_TEAM_NAME = "entry.674349927";
+    const ENTRY_RESULT    = "entry.1618577323";
+    const ENTRY_HP        = "entry.211123250";
+    const ENTRY_TIME      = "entry.2117876006";
+    /* ========================================= */
+
+    // --- 30 QUESTIONS (Updated) ---
+    let questions = [
+        // UNIT 1
+        { q: "By next year, I ______ English for 5 years.", options: ["will learn", "will have learned", "learning", "learn"], answer: 1 }, 
+        { q: "______ finished his homework, Tom went to sleep.", options: ["Having", "Have", "To have", "Had"], answer: 0 }, 
+        { q: "He works all weekend. He is a ______.", options: ["workaholic", "realist", "pessimist", "modest"], answer: 0 }, 
+        { q: "The boss gave me a chance, so I ______.", options: ["put it off", "jumped at it", "gave it up", "ignored it"], answer: 1 }, 
+        { q: "She wants to be CEO. She is very ______.", options: ["lazy", "ambitious", "shy", "modest"], answer: 1 }, 
+        { q: "We decided to ______ (delay) the meeting.", options: ["carry out", "put off", "take up", "bring about"], answer: 1 }, 
+        { q: "I'm sorry to ______ kept you waiting.", options: ["have", "had", "having", "has"], answer: 0 }, 
+
+        // UNIT 2
+        { q: "The man ______ I work is very kind.", options: ["who", "whom", "with whom", "which"], answer: 2 }, 
+        { q: "She always checks her work carefully. She is ______.", options: ["conscientious", "narrow-minded", "gifted", "rude"], answer: 0 }, 
+        { q: "You must be ______ for your own mistakes.", options: ["guilty", "accountable", "afraid", "scared"], answer: 1 }, 
+        { q: "The student ______ phone rang was asked to leave.", options: ["who", "whose", "which", "that"], answer: 1 }, 
+        { q: "He never listens to others. He is ______.", options: ["open-minded", "narrow-minded", "helpful", "polite"], answer: 1 }, 
+        { q: "I have to be careful around him. I am walking on ______.", options: ["eggshells", "glass", "water", "fire"], answer: 0 }, 
+        { q: "Success depends ______ hard work.", options: ["at", "in", "for", "on"], answer: 3 }, 
+
+        // UNIT 3
+        { q: "______ how hard he tries, he can't swim.", options: ["No matter", "Even if", "Although", "Because"], answer: 0 }, 
+        { q: "I am ______ (very scared) of spiders.", options: ["happy", "petrified", "willing", "brave"], answer: 1 }, 
+        { q: "He drove fast ______ he wouldn't be late.", options: ["so that", "because", "due to", "in order"], answer: 0 }, 
+        { q: "I faint when I see blood. I am ______.", options: ["squeamish", "courageous", "strong", "heroic"], answer: 0 }, 
+        { q: "______ what you say, I won't go.", options: ["No matter", "Even though", "Ideally", "However"], answer: 0 }, 
+        { q: "Running into the fire was a ______ act.", options: ["silly", "courageous", "boring", "safe"], answer: 1 }, 
+        { q: "I study hard ______ to pass the exam.", options: ["so that", "in order", "because", "for"], answer: 1 }, 
+
+        // UNIT 4
+        { q: "What ______ is people who are rude.", options: ["I hate", "bothers me", "annoying", "bad"], answer: 1 }, 
+        { q: "My biggest ______ is loud chewing.", options: ["pet peeve", "joy", "hobby", "love"], answer: 0 }, 
+        { q: "______ he lied to me made me sad.", options: ["The fact that", "What", "Which", "Because"], answer: 0 }, 
+        { q: "After the fight, there was a ______ in our friendship.", options: ["bond", "rift", "union", "gift"], answer: 1 }, 
+        { q: "When he is nervous, he has a facial ______.", options: ["tic", "smile", "laugh", "joke"], answer: 0 }, 
+        { q: "Don't hold a ______ (stay angry). Forgive him.", options: ["grudge", "gift", "party", "secret"], answer: 0 }, 
+        { q: "What I need right now ______ some sleep.", options: ["are", "is", "were", "am"], answer: 1 }, 
+        { q: "It is his attitude ______ makes me angry.", options: ["what", "who", "that", "where"], answer: 2 }, 
+        { q: "She is so smart ______ is obvious to everyone.", options: ["That", "Which", "What", "If"], answer: 0 } 
+    ];
+
+    let bossHP = 200; 
+    let currentQ = 0;
+    let timer;
+    let timeLeft = 10;
+    let startTime;
+    let teamName = "Unknown";
+
+    const textDisplay = document.getElementById('game-text');
+    const bossBar = document.getElementById('boss-hp-bar');
+    const bossSprite = document.getElementById('boss-sprite');
+    const optionsContainer = document.getElementById('options-container');
+    const startBtn = document.getElementById('start-btn');
+    const nextBtn = document.getElementById('next-btn');
+    const qTracker = document.getElementById('q-tracker');
+    const timerBar = document.getElementById('timer-bar');
+    const nameInput = document.getElementById('team-name-input');
+    const inputScreen = document.getElementById('input-screen');
+    const saveMsg = document.getElementById('save-msg');
+
+    startBtn.addEventListener('click', () => {
+        if(nameInput.value.trim() === "") { alert("Please enter a Team Name!"); return; }
+        teamName = nameInput.value.trim();
+        startTime = new Date(); 
+        
+        // SHUFFLE
+        for (let i = questions.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [questions[i], questions[j]] = [questions[j], questions[i]];
+        }
+
+        inputScreen.classList.add('hidden');
+        optionsContainer.classList.remove('hidden');
+        loadQuestion();
+    });
+
+    function loadQuestion() {
+        if (currentQ >= questions.length) { endGame(false); return; }
+
+        const q = questions[currentQ];
+        textDisplay.textContent = q.q;
+        qTracker.textContent = currentQ + 1;
+        optionsContainer.innerHTML = '';
+        nextBtn.classList.add('hidden');
+
+        q.options.forEach((opt, index) => {
+            const btn = document.createElement('button');
+            btn.textContent = `> ${opt}`;
+            btn.onclick = () => handleAnswer(index, q.answer);
+            optionsContainer.appendChild(btn);
+        });
+        startTimer();
+    }
+
+    function startTimer() {
+        timeLeft = 10;
+        timerBar.style.width = "100%";
+        clearInterval(timer);
+        timer = setInterval(() => {
+            timeLeft--;
+            timerBar.style.width = (timeLeft * 10) + "%";
+            if (timeLeft <= 0) { clearInterval(timer); timeRanOut(); }
+        }, 1000);
+    }
+
+    function timeRanOut() {
+        disableButtons();
+        // NO HEAL
+        textDisplay.textContent = "Too Slow! Attack Missed!";
+        updateUI();
+        nextBtn.classList.remove('hidden');
+    }
+
+    function handleAnswer(selectedIndex, correctIndex) {
+        clearInterval(timer);
+        disableButtons();
+        if (selectedIndex === correctIndex) {
+            bossHP -= 10; if (bossHP < 0) bossHP = 0;
+            textDisplay.textContent = "It's SUPER EFFECTIVE! -10 HP";
+            bossSprite.classList.add('blink');
+            setTimeout(() => bossSprite.classList.remove('blink'), 600);
+        } else {
+            // NO HEAL
+            textDisplay.textContent = "But it failed! (MISS)";
+        }
+        updateUI();
+        if (bossHP <= 0) { setTimeout(() => endGame(true), 1000); }
+        else { nextBtn.classList.remove('hidden'); }
+    }
+
+    function disableButtons() {
+        const buttons = optionsContainer.querySelectorAll('button');
+        buttons.forEach(btn => btn.disabled = true);
+    }
+
+    nextBtn.addEventListener('click', () => { currentQ++; loadQuestion(); });
+    function updateUI() { bossBar.style.width = (bossHP / 2) + "%"; }
+
+    function endGame(win) {
+        clearInterval(timer);
+        const endTime = new Date();
+        const timeTakenMs = endTime - startTime;
+        const minutes = Math.floor(timeTakenMs / 60000);
+        const seconds = ((timeTakenMs % 60000) / 1000).toFixed(0);
+        const timeString = `${minutes}m ${seconds}s`;
+        const resultText = win ? "VICTORY" : "DEFEAT";
+
+        optionsContainer.classList.add('hidden');
+        nextBtn.classList.add('hidden');
+        document.querySelector('.timer-container').style.display = 'none';
+        
+        textDisplay.innerHTML = `${resultText}<br>Time: ${timeString}<br>HP Left: ${bossHP}`;
+        
+        if (win) {
+             bossSprite.style.transition = "opacity 2s";
+             bossSprite.style.opacity = "0";
+        }
+        
+        autoSendToGoogle(resultText, timeString);
+    }
+
+    function autoSendToGoogle(result, time) {
+        saveMsg.textContent = "📡 SAVING TO SERVER...";
+        saveMsg.classList.remove('hidden');
+
+        const submitURL = `${FORM_URL}?` + 
+            `${ENTRY_TEAM_NAME}=${encodeURIComponent(teamName)}&` +
+            `${ENTRY_RESULT}=${encodeURIComponent(result)}&` +
+            `${ENTRY_HP}=${bossHP}&` +
+            `${ENTRY_TIME}=${encodeURIComponent(time)}&` +
+            `submit=Submit`;
+
+        fetch(submitURL, {
+            method: 'POST',
+            mode: 'no-cors' 
+        }).then(() => {
+            saveMsg.textContent = "✅ RECORDED IN DATABASE!";
+            saveMsg.style.color = "#2ecc71";
+        }).catch(err => {
+            saveMsg.textContent = "❌ ERROR: Check Internet";
+            console.error(err);
+        });
+    }
+</script>
+</body>
+</html>
